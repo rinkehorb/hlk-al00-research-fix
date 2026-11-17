@@ -1,6 +1,7 @@
 package com.hlk.rootguard;
 
 import android.app.Activity;
+import android.app.ActivityManager;
 import android.content.Intent;
 import android.graphics.Color;
 import android.os.Bundle;
@@ -158,6 +159,9 @@ public class MainActivity extends Activity {
         root.addView(navWrap);
 
         setContentView(root);
+        // Keep the probe's task out of the recents list so a "clear all"
+        // swipe cannot kill it; the launcher icon still opens it normally.
+        applyRecents(this, Prefs.hideRecents(this));
         // Optional deep link for verification / shortcuts:
         //   am start -n com.hlk.rootguard/.MainActivity --ei page 1
         int p = 0;
@@ -166,6 +170,28 @@ public class MainActivity extends Activity {
         } catch (Throwable ignored) {
         }
         goTo(p < 0 || p >= TABS.length ? 0 : p);
+    }
+
+    /**
+     * Mirror the user switch onto this task.  The manifest already ships
+     * excludeFromRecents="true" (so the very first task is hidden too); the
+     * runtime call is what lets the switch turn it back on.
+     */
+    static void applyRecents(Activity a, boolean hide) {
+        try {
+            ActivityManager am =
+                    (ActivityManager) a.getSystemService(ACTIVITY_SERVICE);
+            if (am == null)
+                return;
+            for (ActivityManager.AppTask t : am.getAppTasks()) {
+                try {
+                    if (t.getTaskInfo().id == a.getTaskId())
+                        t.setExcludeFromRecents(hide);
+                } catch (Throwable ignored) {
+                }
+            }
+        } catch (Throwable ignored) {
+        }
     }
 
     private FrameLayout.LayoutParams match() {

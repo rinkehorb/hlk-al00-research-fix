@@ -230,6 +230,48 @@ final class KsuBootstrap {
     }
 
     /**
+     * True when the grant still belongs to an installed app at this uid.
+     *
+     * getPackagesForUid() alone is not enough.  Right after a boot the package
+     * manager occasionally answers "" for a perfectly installed package --
+     * seen on HLK-AL00 with bin.mt.termex (uid 10563): a v1.6 boot dropped the
+     * entry, and the very next boot resolved it fine.  So an entry is kept
+     * when the recorded package still exists AND reports the same uid; only
+     * when both checks fail is it really an orphan (uninstalled app, or a
+     * uid that has already been recycled to another package).
+     */
+    private static boolean grantAlive(Context c, int uid, String pkg) {
+        if (pkg != null && !pkg.isEmpty()) {
+            try {
+                android.content.pm.PackageInfo pi =
+                        c.getPackageManager().getPackageInfo(pkg, 0);
+                if (pi != null && pi.applicationInfo != null
+                        && pi.applicationInfo.uid == uid)
+                    return true;
+            } catch (Throwable ignored) {
+            }
+            return false;
+        }
+        return !pkgForUid(c, uid).isEmpty();
+    }
+
+    /** uid -> package name from the saved snapshot ("" when not recorded). */
+    private static java.util.Map<Integer, String> savedGrants(Context c) {
+        java.util.Map<Integer, String> m = new java.util.HashMap<>();
+        for (String e : Prefs.grants(c).split(";")) {
+            int at = e.indexOf(':');
+            if (at <= 0)
+                continue;
+            try {
+                m.put(Integer.parseInt(e.substring(0, at)),
+                        e.substring(at + 1));
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return m;
+    }
+
+    /**
      * Read the kernel table and persist it.  Runs once after the replay and
      * then once a minute, which is what catches a grant the user just made in
      * the Manager panel (the app cannot hook the ioctl, so polling is the
@@ -248,11 +290,14 @@ final class KsuBootstrap {
             }
             sGrantCount = uids.length;
             StringBuilder sb = new StringBuilder();
+            java.util.Map<Integer, String> saved = savedGrants(c);
             int dropped = 0, keptN = 0;
             for (int u : uids) {
                 String pkg = pkgForUid(c, u);
-                if (pkg.isEmpty()) {
-                    // 已卸载（或重装换了 uid）留下的残留条目：不落盘
+                if (pkg.isEmpty() && saved.containsKey(u))
+                    pkg = saved.get(u);          // 包管理器抖一下时用记录名复核
+                if (!grantAlive(c, u, pkg)) {
+                    // 已卸载（或 uid 已被回收给别的应用）的残留条目：不落盘
                     dropped++;
                     continue;
                 }
@@ -299,8 +344,12 @@ final class KsuBootstrap {
             }
             // 残留条目（对应的应用已经不在了）：不重放，也从存档里剔掉，
             // 否则每次开机都会凭空多出一个「有授权、没应用」的条目。
-            if (pkgForUid(c, uid).isEmpty()) {
+            // grantAlive() 用「记录包名 + 同 uid」复核，避免包管理器刚开机
+            // 查询抖动时把还在应用误判成孤儿。
+            String pkg = at >= 0 && at + 1 < e.length() ? e.substring(at + 1) : "";
+            if (!grantAlive(c, uid, pkg)) {
                 drop++;
+                note("grants: orphan uid=" + uid + " pkg=" + pkg);
                 continue;
             }
             if (keep.length() > 0)

@@ -43,6 +43,12 @@ final class Prefs {
      * the next reboot.
      */
     static final String GRANTS = "grants";
+    /**
+     * Hide MainActivity from the recents list (default on).  The probe lives
+     * in this process, so a habitual "clear all" swipe used to kill root
+     * without warning.
+     */
+    static final String HIDE_RECENTS = "hide_recents";
 
     static final int DEFAULT_DELAY_S = 300;
     static final int MAX_FAILS = 2;
@@ -68,6 +74,14 @@ final class Prefs {
 
     static int fails(Context c) {
         return sp(c).getInt(FAILS, 0);
+    }
+
+    static boolean hideRecents(Context c) {
+        return sp(c).getBoolean(HIDE_RECENTS, true);
+    }
+
+    static void setHideRecents(Context c, boolean on) {
+        sp(c).edit().putBoolean(HIDE_RECENTS, on).commit();
     }
 
     static String grants(Context c) {

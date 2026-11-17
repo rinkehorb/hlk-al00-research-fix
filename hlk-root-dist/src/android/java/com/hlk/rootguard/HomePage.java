@@ -40,6 +40,7 @@ final class HomePage {
     private final TextView vGrants;
     private final TextView vStrikes;
     private final Switch toggle;
+    private final Switch hideRec;
     private final EditText delay;
 
     HomePage(Context c, MainActivity act) {
@@ -140,6 +141,18 @@ final class HomePage {
             refresh();
         });
         ctl.addView(toggle);
+        ctl.addView(Ui.gap(c, 8));
+        hideRec = new Switch(c);
+        hideRec.setText("最近任务里隐藏 (hide from recents)");
+        hideRec.setTextSize(14);
+        hideRec.setTextColor(Ui.TEXT);
+        hideRec.setChecked(Prefs.hideRecents(c));
+        hideRec.setOnCheckedChangeListener((v, on) -> {
+            Prefs.setHideRecents(c, on);
+            MainActivity.applyRecents(act, on);
+            GuardService.note("recents: " + (on ? "hidden" : "visible"));
+        });
+        ctl.addView(hideRec);
         ctl.addView(Ui.gap(c, 8));
         LinearLayout drow = new LinearLayout(c);
         drow.setOrientation(LinearLayout.HORIZONTAL);

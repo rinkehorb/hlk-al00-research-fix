@@ -1,7 +1,7 @@
 # android/ —— 一体化 APK 工程（2026-11-10 精简版）
 
 `bin/hlk-root-guard.apk` 是**主 APK**
-（versionCode 16 / versionName 1.6，2.99 MB，md5 `c676eea4abfa5b242b79fbaf26a9ad6b`）。
+（versionCode 17 / versionName 1.7，2.99 MB，md5 `53d0bfe8c4b87521a3651c1ed738f4a2`）。
 它把开机 root 链、两个内核模块与部署脚本全部打包，装完重启即可，
 不需要 PC、不需要手动 `insmod`。官方 Manager 从本版起**不再内置**，
 需要图形授权界面时用 `../bin/SukiSU_v4.2.1_40994-release.apk`

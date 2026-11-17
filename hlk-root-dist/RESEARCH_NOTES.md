@@ -1,13 +1,15 @@
 # HLK-AL00（荣耀9X 全网通，代号 HLK-AL00）内核安全研究笔记
 
-## 当前状态速查（2026-11-16 v1.6 残留授权过滤 + 页首兜底版）
+## 当前状态速查（2026-11-16 v1.7 过滤兜底 + 最近任务隐藏版）
 
 - **主交付物**：`bin/hlk-root-guard.apk`（code 16 / 1.6，2.99 MB，
-  md5 `c676eea4…`）；开机约 7 分钟（最坏约 15 分钟，见 §46）自动提权 +
+  md5 `53d0bfe8…`）；开机约 7 分钟（最坏约 15 分钟，见 §46）自动提权 +
   双模块 + **重放持久化的授权**（C-95）。**Termux 补丁仍是「补丁」页手动
   点一次，无常驻后台线程**（§47）。官方 Manager 是**可选的第二包**
   `bin/SukiSU_v4.2.1_40994-release.apk`，开机 / 每次打开 APP 时接管
   （「工作中 + 越狱模式」）；不装不影响 root。
+- **v1.7 两处**：① 孤儿判定加「包名 + 同 uid」兜底（C-99），修 v1.6 误伤
+  `bin.mt.termex` 的问题；② `excludeFromRecents` + 首页开关，清后台不再误杀探针。
 - **v1.6 两处修正**：① 授权快照 / 重放前先 `pkgForUid`，卸载应用留下的
   孤儿 uid 不再落盘、不再重放（C-97）；② `sucompat` 固定槽位全失败时写到
   栈页首，修「深栈偶发拿不到 root」（C-98）。
@@ -2248,3 +2250,14 @@ syscall 时装 fd」，必然早于 `HomeViewModel.buildState()`，也不需要�
   不是 `mgr_uid`（mgr_uid 门禁解释的是「面板点允许没生效」那一类）。
   注：本结论的 `last_uid` 当时是 0 而非 10560，还缺一次「点 /data/data 时抓
   guard 增量」的决定性对照；v1.6 装机后应按 `guard` 增量复核。
+
+- **C-99｜v1.6 的孤儿判定会误伤「包管理器查询抖动」下的真实应用**。装机实测：
+  v1.6 首次开机后 `allow_su=4→3`，被剔掉的是 `bin.mt.termex`（uid 10563，MT 管理器
+  下载的插件包，`stopped=true / notLaunched=true`、无桌面图标），但 `pm list packages
+  --uid 10563` 明明能查到；同一份 prefs 下一轮重启又 4 条全部重放成功
+  （`grants replay: 4 entries -> uid=10563 … OK`）。判定改为两道校验：记录包名
+  `getPackageInfo(pkg,0)` 存在且 `applicationInfo.uid==uid` → 保留；否则再看不带包名的
+  `pkgForUid(uid)`；两条都失败才判孤儿并打 `orphan uid=… pkg=…`。uid 被回收给新应用时
+  包名与 uid 对不上，仍会剔除，安全边界不变。另：v1.7 在主界面「运行控制」加了
+  「最近任务里隐藏」开关（`excludeFromRecents`），因为探针跑在 APP 进程里，
+  从最近任务划掉会连探针一起杀掉；「强行停止」属系统行为，拦不住。

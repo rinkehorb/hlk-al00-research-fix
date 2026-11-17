@@ -29,6 +29,8 @@ root 会话保留 FBE 会话 keyring 与完整 capability，可正常读写 `/da
 | **授权跨重启恢复（v1.5）** | 开机链自动重放 + APP 内 `grants` 快照 | 重启后 `allow_su` 自动恢复，不用重新授权 |
 | **残留授权过滤（v1.6）** | 快照 / 重放前先 `pkgForUid` 校验 | 卸载应用后重启不再凭空多出「无应用」条目（§4.3） |
 | **sucompat 页首兜底（v1.6）** | 三个固定槽位全失败时改写栈页首 | 深栈场景不再偶发 execve `su` ENOENT（§4.3） |
+| **授权过滤兜底（v1.7）** | 包名+uid 双校验，包管理器抖动不误伤 | 装机实测误伤 termex 后补的防线（§4.4） |
+| **最近任务里隐藏（v1.7）** | `excludeFromRecents` + 首页开关 | 清后台不再误杀探针（§4.4） |
 | 校验完整性 | `md5sum -c MANIFEST.md5`（包根，唯一一份） | 全部 OK |
 
 **三层结构**：① 开机链（APK 内探针，Mali JIT UAF → 页表劫持 →
@@ -130,7 +132,7 @@ hlk-root-dist/
 
 | 文件 | 用途 |
 |---|---|
-| `hlk-root-guard.apk` | ★ 主 APK（2.99 MB，md5 `c676eea4…`，versionCode 16 / 1.6），唯一必需安装项 |
+| `hlk-root-guard.apk` | ★ 主 APK（2.99 MB，md5 `53d0bfe8…`，versionCode 17 / 1.7），唯一必需安装项 |
 | `SukiSU_v4.2.1_40994-release.apk` | 可选官方 Manager（40994 / UAPI5），不内置于主包 |
 | `hlk_ksu_shim9.ko` / `hlk_sucompat.ko` | 开机链自动 `insmod` 的两个模块 |
 | `hlk_su` / `grant_su` | root 请求 helper / `SET_APP_PROFILE` 授权工具 |
@@ -158,7 +160,7 @@ hlk-root-dist/
 
 | 文件 | md5 |
 |---|---|
-| `bin/hlk-root-guard.apk` | `c676eea4abfa5b242b79fbaf26a9ad6b`（2.99 MB，v1.6 / code 16） |
+| `bin/hlk-root-guard.apk` | `53d0bfe8c4b87521a3651c1ed738f4a2`（2.99 MB，v1.7 / code 17） |
 | `bin/jit_write_probe_v16` | `7a86966f54eed1445b0b9ac107d00fc4` |
 | `src/probe/jit_write_probe_v16.c` | `ef6279d0bc124e13ff3076286c7f91a1` |
 | `bin/hlk_sucompat.ko` | `97de69b49fbc2e58f99e2ece4e323968`（202072 B，v1.6 页首兜底） |
@@ -324,6 +326,23 @@ MT 10556: hlk_su: GRANT_ROOT denied: Operation not permitted
 `/usr/bin/aarch64-linux-gnu-`（仓库自带 nolibc GCC 8.4 的 `as` 不可用），
 宿主另需 `bc`。产物 vermagic 与旧 ko 一致（`4.14.116 SMP preempt mod_unload
 modversions aarch64`），`__versions` 为空，与设备内核一致。
+
+### 4.4 v1.7：授权过滤加「包名兜底」 + 最近任务里隐藏（2026-11-16）
+
+**A. 过滤兜底（补 v1.6 的误伤）**：v1.6 只用 `pkgForUid()` 判孤儿，装机实测出现过
+一次误伤——首次开机时 `bin.mt.termex`（uid 10563，MT 管理器下载的插件包，无桌面图标）
+被判成孤儿剔除，下一轮重启又正常重放。判定改成两道校验：① 存档里的包名
+`getPackageInfo(pkg, 0)` 存在且 `applicationInfo.uid == uid` → 保留；② 否则再查不带
+包名的 `pkgForUid(uid)`；两条都失败才判孤儿，并打 `grants: orphan uid=… pkg=…`。
+快照侧对内核表里查不到包名的 uid，会用存档里的记录名复核。
+**安全边界不变**：uid 已被回收给别的应用时，记录包名与 uid 对不上，照旧剔除。
+
+**B. 最近任务里隐藏**：探针跑在 APP 进程内，以前从最近任务划掉整张卡会把探针一起
+杀掉（用户习惯性「清后台」）。`MainActivity` 清单加 `android:excludeFromRecents="true"`，
+首页「运行控制」卡片（紧挨「开机自启」）新增「最近任务里隐藏」开关，默认开
+（`Prefs.hide_recents`），切换时调用 `ActivityManager.AppTask.setExcludeFromRecents()`
+立即生效。桌面图标照常能打开，只是不再出现在最近任务列表里。
+注意：设置 → 应用信息 → 强行停止是系统行为，任何应用都拦不住；这个开关只防误划。
 
 ## 5. 构建复现（**仅 Linux**，2026-11-11 起）
 

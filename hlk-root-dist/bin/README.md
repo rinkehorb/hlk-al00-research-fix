@@ -20,7 +20,7 @@ adb reboot
 
 | 文件 | md5 | 用途 |
 |---|---|---|
-| `hlk-root-guard.apk` | `c676eea4abfa5b242b79fbaf26a9ad6b` | ★ 主 APK，2.99 MB / versionCode 16（v1.6）；开机自动提权 + 双模块 + **授权跨重启自动重放 + 残留授权过滤**；Termux 补丁在「补丁」页手动应用 |
+| `hlk-root-guard.apk` | `53d0bfe8c4b87521a3651c1ed738f4a2` | ★ 主 APK，2.99 MB / versionCode 17（v1.7）；开机自动提权 + 双模块 + **授权跨重启自动重放 + 残留授权过滤（包名兜底）**；最近任务可隐藏；Termux 补丁在「补丁」页手动应用 |
 | `SukiSU_v4.2.1_40994-release.apk` | `fa8dae0532b934d49222a91361d4b8cb` | 官方 Manager（40994 / UAPI5），**可选**。版本锁死，勿换 4.3.0-r1 |
 | `hlk_ksu_shim9.ko` | `66f895bd9a2366c2101e8ee591ebb8bf` | SukiSU Ultra 驱动契约垫片 |
 | `hlk_sucompat.ko` | `97de69b49fbc2e58f99e2ece4e323968` | `execve("su")` 路径重定向；v1.6 加栈页首兜底（202072 B） |
