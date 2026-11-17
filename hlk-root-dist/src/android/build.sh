@@ -70,7 +70,7 @@ until "$BT/aapt2" link \
     -I "$PLAT" \
     --manifest src/android/AndroidManifest.xml \
     --min-sdk-version 28 --target-sdk-version 28 \
-    --version-code 15 --version-name 1.5 \
+    --version-code 16 --version-name 1.6 \
     --no-version-vectors 2>"$OUT/aapt2.err"
 do
     n=$((n + 1))

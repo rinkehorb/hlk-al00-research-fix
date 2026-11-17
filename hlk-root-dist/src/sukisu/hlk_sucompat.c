@@ -229,6 +229,24 @@ static unsigned long stack_slot(unsigned long *r, const char *s, unsigned long l
 			return slot;
 		n_copyfail++;
 	}
+	/*
+	 * Page-start fallback (v1.6).  The three fixed offsets above all assume
+	 * SP sits well inside its page; when it does not (a deep JNI/ART stack
+	 * frame lands within ~336 bytes of the page boundary) they all bail out
+	 * and we used to give up -- the caller then exec'd the original, non
+	 * existent /sbin/su and saw ENOENT, which is what made MT Manager's
+	 * root calls fail while NP Manager's worked.
+	 *
+	 * The stack grows towards lower addresses, so everything between the
+	 * page start and SP is mapped but unused: we can put the 23-byte target
+	 * path just above the page boundary as long as `len` fits below SP.
+	 */
+	if (page_off >= len + 32) {
+		slot = (sp - page_off + 16) & ~0xFUL;
+		if (!ucopy_to((void __user *)slot, s, len))
+			return slot;
+		n_copyfail++;
+	}
 	n_guard++;
 	return 0;
 }

@@ -248,11 +248,21 @@ final class KsuBootstrap {
             }
             sGrantCount = uids.length;
             StringBuilder sb = new StringBuilder();
+            int dropped = 0, keptN = 0;
             for (int u : uids) {
+                String pkg = pkgForUid(c, u);
+                if (pkg.isEmpty()) {
+                    // 已卸载（或重装换了 uid）留下的残留条目：不落盘
+                    dropped++;
+                    continue;
+                }
                 if (sb.length() > 0)
                     sb.append(';');
-                sb.append(u).append(':').append(pkgForUid(c, u));
+                sb.append(u).append(':').append(pkg);
+                keptN++;
             }
+            if (dropped > 0)
+                note("grants snapshot: dropped " + dropped + " orphan uid(s)");
             String enc = sb.toString();
             if (enc.isEmpty() && !authoritative)
                 return;                 // keep what we have
@@ -260,8 +270,8 @@ final class KsuBootstrap {
                 return;                 // unchanged, do not touch flash
             Prefs.sp(c).edit().putString(Prefs.GRANTS, enc).commit();
             sSnapLast = enc;
-            note("grants snapshot: " + uids.length + " entr"
-                    + (uids.length == 1 ? "y" : "ies") + " saved");
+            note("grants snapshot: " + keptN + " entr"
+                    + (keptN == 1 ? "y" : "ies") + " saved");
         }
     }
 
@@ -275,7 +285,8 @@ final class KsuBootstrap {
             return;
         }
         StringBuilder sb = new StringBuilder();
-        int n = 0;
+        StringBuilder keep = new StringBuilder();
+        int n = 0, drop = 0;
         for (String e : saved.split(";")) {
             if (e.isEmpty())
                 continue;
@@ -286,6 +297,15 @@ final class KsuBootstrap {
             } catch (NumberFormatException x) {
                 continue;
             }
+            // 残留条目（对应的应用已经不在了）：不重放，也从存档里剔掉，
+            // 否则每次开机都会凭空多出一个「有授权、没应用」的条目。
+            if (pkgForUid(c, uid).isEmpty()) {
+                drop++;
+                continue;
+            }
+            if (keep.length() > 0)
+                keep.append(';');
+            keep.append(e);
             if (sb.length() > 0)
                 sb.append("; ");
             sb.append(dir.getAbsolutePath()).append("/grant_su ")
@@ -293,6 +313,12 @@ final class KsuBootstrap {
             if (at >= 0 && at + 1 < e.length())
                 sb.append(' ').append(e.substring(at + 1));
             n++;
+        }
+        if (drop > 0) {
+            String kept = keep.toString();
+            Prefs.sp(c).edit().putString(Prefs.GRANTS, kept).commit();
+            sSnapLast = kept;
+            note("grants replay: dropped " + drop + " orphan uid(s)");
         }
         if (n == 0) {
             sReplayDone = true;

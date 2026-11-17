@@ -1,13 +1,16 @@
 # HLK-AL00（荣耀9X 全网通，代号 HLK-AL00）内核安全研究笔记
 
-## 当前状态速查（2026-11-16 v1.5 授权跨重启自动恢复版）
+## 当前状态速查（2026-11-16 v1.6 残留授权过滤 + 页首兜底版）
 
-- **主交付物**：`bin/hlk-root-guard.apk`（code 15 / 1.5，2.99 MB，
-  md5 `1bad2a89…`）；开机约 7 分钟（最坏约 15 分钟，见 §46）自动提权 +
+- **主交付物**：`bin/hlk-root-guard.apk`（code 16 / 1.6，2.99 MB，
+  md5 `c676eea4…`）；开机约 7 分钟（最坏约 15 分钟，见 §46）自动提权 +
   双模块 + **重放持久化的授权**（C-95）。**Termux 补丁仍是「补丁」页手动
   点一次，无常驻后台线程**（§47）。官方 Manager 是**可选的第二包**
   `bin/SukiSU_v4.2.1_40994-release.apk`，开机 / 每次打开 APP 时接管
   （「工作中 + 越狱模式」）；不装不影响 root。
+- **v1.6 两处修正**：① 授权快照 / 重放前先 `pkgForUid`，卸载应用留下的
+  孤儿 uid 不再落盘、不再重放（C-97）；② `sucompat` 固定槽位全失败时写到
+  栈页首，修「深栈偶发拿不到 root」（C-98）。
 - **★ 授权跨重启自动恢复（v1.5，C-95）**：shim 的 allowlist 只在模块内存，
   重启必清零。`grant_su list` 读回 → `Prefs.grants` 落盘 → 开机链重放。
   真机验收：重启 `allow_su=0` → 自动 `allow_su=1`，NP(10557) `uid=0(root)`。
@@ -2218,3 +2221,30 @@ syscall 时装 fd」，必然早于 `HomeViewModel.buildState()`，也不需要�
   不匹配时提示区红字说明「现在在管理器面板点授权，会被内核直接拒绝」。
   顺带解释历史疑问：同一台机「授权 MT 却访问不了 `/data/data`、重启后又能了」
   不是概率问题——是重启后 `mgr_uid` 被重新写对（10116）且 allowlist 经重放恢复。
+
+
+- **C-97｜超级用户清单凭空多出孤儿条目的成因是 v1.5 的持久化把「uid:包名」原样重放**。
+  现场：授权状态下卸载旧 MT → 重启 → 装新 MT（`bin.mt.plus.canary`）→ 授权，
+  面板角标 5、列表只有 3 条；`/proc/hlksu_fd9 allow_su=5`，`grant_su list` 回
+  10557(NP) / 2000(shell) / 10556(无包) / 10558(无包) / 10560(MT canary)。
+  `grant_su deny` 能把 allow_su 降回 3（但 `used` 槽位不释放，见 P4）。
+  安全含义：孤儿 uid 在被 deny 前一直 `allow_su=1`，Android 回收 appid 后
+  新装应用若复用 10556/10558 会**不弹框直接拿 root**（`GRANT_ROOT` 只按 uid 判）。
+  修法（v1.6）：`KsuBootstrap.snapshotGrants()` / `replayGrants()` 落盘前都先
+  `pkgForUid()`，拿不到包名的 uid 不进 prefs、不重放，并从旧存档剔掉，
+  日志 `grants ...: dropped N orphan uid(s)`。不改内核，`used` 槽位问题仍归 P4。
+- **C-98｜`sucompat` 偶发让应用拿不到 root 的成因是 `stack_slot()` 的三档固定偏移在页首附近全部放弃**。
+  现场对照：NP 管理器（10557）能进 `/data/data`，MT（10560）不能，两者都在
+  allowlist 里；root shell 直接 `ls /data/data` 正常（SELinux Enforcing 不是瓶颈）；
+  logcat 里 MT 派生的 `sh`/`ls` 仍停在 `u:r:untrusted_app_27`；
+  `/proc/hlk_sucompat` 计数 `hits=2 fault_out=52 noslot=0 slot: guard=52 copyfail=0`
+  —— `guard` 恒等于 `fault_out`、`copyfail=0`，说明失败全部落在「`page_off`
+  不足、三个槽位放不下 → 放弃改写」这一支，execve 继续用不存在的 `/sbin/su` → ENOENT。
+  用户实测「重启几次又能访问」与该结构性结论一致（每次启动的栈位置不同）。
+  修法（v1.6，方案 2）：固定槽位全失败后，若 `page_off ≥ len+32`，把目标路径写到
+  `(sp - page_off + 16) & ~0xF`（`page_start…SP` 是已映射未用区域），仍用
+  `__copy_to_user_inatomic` 校验，失败才计 `copyfail`。**更正 C-96 末段**：
+  「MT 授权后打不开 `/data/data`、重启又能了」的主因是这条 guard 分支，
+  不是 `mgr_uid`（mgr_uid 门禁解释的是「面板点允许没生效」那一类）。
+  注：本结论的 `last_uid` 当时是 0 而非 10560，还缺一次「点 /data/data 时抓
+  guard 增量」的决定性对照；v1.6 装机后应按 `guard` 增量复核。

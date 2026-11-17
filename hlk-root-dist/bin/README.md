@@ -20,10 +20,10 @@ adb reboot
 
 | 文件 | md5 | 用途 |
 |---|---|---|
-| `hlk-root-guard.apk` | `1bad2a8955fe333a98755649159eb84d` | ★ 主 APK，2.99 MB / versionCode 15（v1.5）；开机自动提权 + 双模块 + **授权跨重启自动重放**；Termux 补丁在「补丁」页手动应用 |
+| `hlk-root-guard.apk` | `c676eea4abfa5b242b79fbaf26a9ad6b` | ★ 主 APK，2.99 MB / versionCode 16（v1.6）；开机自动提权 + 双模块 + **授权跨重启自动重放 + 残留授权过滤**；Termux 补丁在「补丁」页手动应用 |
 | `SukiSU_v4.2.1_40994-release.apk` | `fa8dae0532b934d49222a91361d4b8cb` | 官方 Manager（40994 / UAPI5），**可选**。版本锁死，勿换 4.3.0-r1 |
 | `hlk_ksu_shim9.ko` | `66f895bd9a2366c2101e8ee591ebb8bf` | SukiSU Ultra 驱动契约垫片 |
-| `hlk_sucompat.ko` | `e5ac652f73d7df293fdb24bd9bab662b` | `execve("su")` 路径重定向 |
+| `hlk_sucompat.ko` | `97de69b49fbc2e58f99e2ece4e323968` | `execve("su")` 路径重定向；v1.6 加栈页首兜底（202072 B） |
 | `hlk_su` | `c51f511f79157fe98c4774e79e36bdf0` | root 请求 helper（含 ambient caps 修复） |
 | `grant_su` | `32cb75e2d32c52675f9a397df3bbb68e` | `SET_APP_PROFILE` 授权 + **`grant_su list` 只读回读 allowlist**（v1.5，646 KB） |
 | `jit_write_probe_v16` | `7a86966f54eed1445b0b9ac107d00fc4` | 开机提权探针 ELF，打包为 APK 内 `lib/arm64-v8a/libxprobe.so` |

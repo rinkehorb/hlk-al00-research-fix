@@ -3,7 +3,7 @@
 目标设备：Huawei HLK-AL00（orlando / Kirin 810 / EMUI 10 / 内核 4.14.116，BL 锁定）。
 装主 APK（3.0 MB，位于 `bin/`），开机后约 7 分钟（EMUI 丢广播时最坏约 15 分钟）
 自动完成临时 root + SukiSU Ultra 垫片；**已授权的应用会在重启后自动恢复**
-（v1.5 起，见 §4.2），**Termux 补丁仍需到 APP「补丁」页手动点一次**（v1.4 起）。
+（v1.5 起，见 §4.2；卸载应用后残留授权会被过滤，见 §4.3），**Termux 补丁仍需到 APP「补丁」页手动点一次**（v1.4 起）。
 官方 Manager 是**可选的第二包**，单独安装后在开机 / 打开 APP 时接管。
 root 会话保留 FBE 会话 keyring 与完整 capability，可正常读写 `/data`、
 访问应用私有数据。2026-11-10 起主包不再内置 17 MB 的 Manager，同日完成
@@ -27,6 +27,8 @@ root 会话保留 FBE 会话 keyring 与完整 capability，可正常读写 `/da
 | 获取 root 命令 | `/data/local/tmp/hlk_su <cmd>` 或裸 `su` | `uid=0(root) ... u:r:shell:s0` |
 | 逐应用授权 root | SukiSU Ultra Manager 超级用户页 | 授权 uid 可读 `/data`（MT / NP 管理器验收通过） |
 | **授权跨重启恢复（v1.5）** | 开机链自动重放 + APP 内 `grants` 快照 | 重启后 `allow_su` 自动恢复，不用重新授权 |
+| **残留授权过滤（v1.6）** | 快照 / 重放前先 `pkgForUid` 校验 | 卸载应用后重启不再凭空多出「无应用」条目（§4.3） |
+| **sucompat 页首兜底（v1.6）** | 三个固定槽位全失败时改写栈页首 | 深栈场景不再偶发 execve `su` ENOENT（§4.3） |
 | 校验完整性 | `md5sum -c MANIFEST.md5`（包根，唯一一份） | 全部 OK |
 
 **三层结构**：① 开机链（APK 内探针，Mali JIT UAF → 页表劫持 →
@@ -128,7 +130,7 @@ hlk-root-dist/
 
 | 文件 | 用途 |
 |---|---|
-| `hlk-root-guard.apk` | ★ 主 APK（2.99 MB，md5 `1bad2a89…`，versionCode 15 / 1.5），唯一必需安装项 |
+| `hlk-root-guard.apk` | ★ 主 APK（2.99 MB，md5 `c676eea4…`，versionCode 16 / 1.6），唯一必需安装项 |
 | `SukiSU_v4.2.1_40994-release.apk` | 可选官方 Manager（40994 / UAPI5），不内置于主包 |
 | `hlk_ksu_shim9.ko` / `hlk_sucompat.ko` | 开机链自动 `insmod` 的两个模块 |
 | `hlk_su` / `grant_su` | root 请求 helper / `SET_APP_PROFILE` 授权工具 |
@@ -156,9 +158,10 @@ hlk-root-dist/
 
 | 文件 | md5 |
 |---|---|
-| `bin/hlk-root-guard.apk` | `1bad2a8955fe333a98755649159eb84d`（2.99 MB，v1.5 / code 15） |
+| `bin/hlk-root-guard.apk` | `c676eea4abfa5b242b79fbaf26a9ad6b`（2.99 MB，v1.6 / code 16） |
 | `bin/jit_write_probe_v16` | `7a86966f54eed1445b0b9ac107d00fc4` |
 | `src/probe/jit_write_probe_v16.c` | `ef6279d0bc124e13ff3076286c7f91a1` |
+| `bin/hlk_sucompat.ko` | `97de69b49fbc2e58f99e2ece4e323968`（202072 B，v1.6 页首兜底） |
 | `bin/hlk_ksu_shim9.ko` | `66f895bd9a2366c2101e8ee591ebb8bf` |
 | `bin/hlk_sucompat.ko` | `e5ac652f73d7df293fdb24bd9bab662b` |
 | `bin/hlk_su` | `c51f511f79157fe98c4774e79e36bdf0` |
@@ -289,6 +292,38 @@ MT 10556: hlk_su: GRANT_ROOT denied: Operation not permitted
 报 `no answer from grant_su list`（这个现象在 2026-11-16 的调试里真实发生过）。
 
 ---
+
+### 4.3 v1.6：残留授权过滤 + sucompat 页首兜底（2026-11-16）
+
+**问题 1（超级用户清单凭空多出孤儿条目）**：授权过的应用被卸载后，它的 uid
+仍留在 shim 的 `g_allow[]` 里；v1.5 的授权持久化又把「uid:包名」快照进 APK，
+重启时原样重放 —— 于是面板里出现一条**没有对应应用**的超级用户条目
+（实测 `allow_su=5`，Manager 只能画出 3 条）。更关键的是：孤儿 uid 在 deny
+之前一直 `allow_su=1`，Android 回收 appid 后一旦被新应用复用，那个应用会
+**不弹框直接拿到 root**（`GRANT_ROOT` 只按 uid 判）。
+
+**修法（纯 APP 侧，不改内核）**：`KsuBootstrap.snapshotGrants()` 与
+`replayGrants()` 在写入 / 重放前都先 `pkgForUid()`：拿不到包名的 uid 一律
+**不落盘、不重放**，并从旧存档里剔掉，日志 `grants ...: dropped N orphan uid(s)`。
+删应用 → 最多一次采样（60 s）后存档就干净，重启不再冒出来。
+
+**问题 2（`sucompat` 偶发让应用拿不到 root）**：`stack_slot()` 只有
+64 / 160 / 320 三个固定槽位，且都要求 `page_off ≥ off + 16`。当调用方 SP
+落在栈页前 ~336 字节（深 JNI / ART 栈）时三个槽位全部放弃，execve 继续指向
+不存在的 `/sbin/su` → ENOENT。实测 MT 管理器授权后偶发打不开 `/data/data`、
+重启几次又正常；`guard` 计数恒等于 `fault_out`、`copyfail=0` 正是这一分支；
+同样授权的 NP 管理器一直正常（栈位置不同）。
+
+**修法（方案 2，页首兜底）**：固定槽位全失败后，若 `page_off ≥ len + 32`，
+把目标路径写到 `(sp - page_off + 16) & ~0xF`。栈向低地址增长，
+`page_start … SP` 这段是已映射但未使用的区域，容得下 23 字节的 `/data/local/tmp/su.sh`；
+写完仍用 `__copy_to_user_inatomic` 校验，真写不进去才计 `copyfail` / `guard`。
+
+**构建备注**：`sucompat.ko` 必须先在内核树上 `modules_prepare`
+（`sh src/sukisu/build_sucompat.sh prepare`），且 `CROSS` 要用带 binutils 的
+`/usr/bin/aarch64-linux-gnu-`（仓库自带 nolibc GCC 8.4 的 `as` 不可用），
+宿主另需 `bc`。产物 vermagic 与旧 ko 一致（`4.14.116 SMP preempt mod_unload
+modversions aarch64`），`__versions` 为空，与设备内核一致。
 
 ## 5. 构建复现（**仅 Linux**，2026-11-11 起）
 
